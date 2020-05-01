@@ -28,7 +28,7 @@ pub fn input_generator(input: &str) -> UnGraph<usize, ()> {
 fn day12_part1(g: &UnGraph<usize, ()>) -> i32 {
     let mut bfs = Bfs::new(g, NodeIndex::new(0));
     let mut cnt = 0;
-    while let Some(bla) = bfs.next(g) {
+    while let Some(_bla) = bfs.next(g) {
         cnt += 1;
     }
     cnt

@@ -29,7 +29,7 @@ fn day9_part2(stream: &str) -> i32 {
     let mut skippimg = false;
     let mut garbage: bool = false;
     let mut n_garbage = 0;
-    let mut enter_garbage = false;
+    let mut enter_garbage;
 
     for c in stream.chars() {
         enter_garbage = false;
