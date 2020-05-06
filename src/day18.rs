@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use regex::Regex;
+use std::thread;
+use std::sync::mpsc;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 enum Value {
@@ -28,29 +31,43 @@ enum Instruction {
     None
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct State {
     registers: HashMap<String, i64>,
     sounded: i64,
-    ptr: usize
+    ptr: usize,
+    tx: mpsc::Sender<i64>,
+    rx: mpsc::Receiver<i64>,
+    part1: bool,
+    n_sent: i64
 }
 
 impl State {
-    fn new() -> State {
+    fn new(tx: mpsc::Sender<i64>, rx: mpsc::Receiver<i64>, part: bool) -> State {
         State {
             registers: HashMap::new(),
             sounded: -1,
-            ptr: 0
+            ptr: 0,
+            n_sent: 0,
+            part1: part,
+            tx: tx,
+            rx: rx
         }
     }
 
-    fn run_instruction(&mut self, instr: Instruction) {
+    fn run_instruction(&mut self, instr: Instruction) -> Result<(), ()> {
         // That's an awful lot of repeated code for 1 character to change...
         match instr {
             Instruction::Snd(target) => {
+                self.n_sent += 1;
                 match target {
                     Value::Constant(x) => self.sounded = x,
                     Value::Register(r) => self.sounded = *self.registers.entry(r).or_insert(0)
+                }
+                // regressing back into clone land...
+                match self.tx.send(self.sounded.clone()) {
+                    Ok(_) => {},
+                    Err(_e) => return Err(())
                 }
             }
             Instruction::Set{target, value} => {
@@ -103,7 +120,10 @@ impl State {
                     let t = self.registers.entry(r).or_insert(0);
                     if *t > 0 {
                         println!("toot: {}", t);
-                        *t = self.sounded;
+                        match self.rx.recv() {
+                            Ok(v) => *t = v,
+                            Err(e) => return Err(())
+                        }
                     }
                 }
             },
@@ -121,6 +141,7 @@ impl State {
         }
 
         self.ptr += 1;
+        Ok(())
     }
 }
 
@@ -171,7 +192,9 @@ fn parse_instructions(input: &str) -> Vec<Instruction> {
 fn day18_part1(instructions: &Vec<Instruction>) -> i64 {
     println!("{:?}", instructions);
 
-    let mut s = State::new();
+    let (tx, rx) = mpsc::channel();
+
+    let mut s = State::new(tx, rx, true);
 
     loop {
     //for _k in (0..10) {
@@ -179,14 +202,32 @@ fn day18_part1(instructions: &Vec<Instruction>) -> i64 {
         // I've had it!.clone()
         match i.clone() {
             Instruction::Rcv(_x) => {
-                s.run_instruction(i);
+                let _ = s.run_instruction(i);
                 break;
             },
-            _ => s.run_instruction(i)
+            _ => {
+                let _ = s.run_instruction(i);
+            }
         }
     }
 
     s.sounded
+}
+
+
+
+fn main() {
+    thread::spawn(|| {
+        for i in 1..10 {
+            println!("hi number {} from the spawned thread!", i);
+            thread::sleep(Duration::from_millis(1));
+        }
+    });
+
+    for i in 1..5 {
+        println!("hi number {} from the main thread!", i);
+        thread::sleep(Duration::from_millis(1));
+    }
 }
 
 #[cfg(test)]
