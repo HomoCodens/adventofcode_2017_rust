@@ -290,7 +290,9 @@ fn day18_part2(instructions: &Vec<Instruction>) -> i64 {
         thread::sleep(Duration::from_millis(1));
     }
 
-    thingamabob.join();
+    match thingamabob.join() {
+        _ => {}
+    }
 
     b.n_sent
 }
@@ -335,7 +337,7 @@ snd p
 rcv a
 rcv b
 rcv c
-rcv d")), 5);
+rcv d")), 3);
     }
 }
 
