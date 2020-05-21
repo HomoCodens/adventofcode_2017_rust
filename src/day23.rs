@@ -246,10 +246,10 @@ fn day23_part1(instructions: &Vec<Instruction>) -> i64 {
 }
 
 #[aoc(day23, part2)]
-fn day23_part23(instructions: &Vec<Instruction>) -> i64 {
-    // It's crazy, but it's MINE! (Also, it has a bug...)
-    let optimized = "   set b 17
-                        set c 68
+fn day23_part23(_instructions: &Vec<Instruction>) -> i64 {
+    // It's crazy, but it's MINE!
+    let optimized = "   set b 99
+                        set c b
                         jnz a 2
                         jnz 1 5
                         mul b 100
@@ -267,7 +267,7 @@ fn day23_part23(instructions: &Vec<Instruction>) -> i64 {
                                     jnz f 3
                                         sub h -1
                                         jnz 1 10
-                                    jgz g 9
+                                    jgz g 5
                                 sub e -1
                                 set g e
                                 sub g b
@@ -283,7 +283,7 @@ fn day23_part23(instructions: &Vec<Instruction>) -> i64 {
                         sub b -17
                         jnz 1 -25";
 
-    //let instructions = &parse_instructions(&optimized);
+    let instructions = &parse_instructions(&optimized);
     let mut s = State::new();
     //s.verbose = true;
     *s.registers.entry(String::from("a")).or_insert(0) = 1;
@@ -308,7 +308,7 @@ fn day23_part23(instructions: &Vec<Instruction>) -> i64 {
 
 /*
 # something something prime numbers I'm sure...
-# "count the non-primes between b and c, inclusive!"
+# "count the non-primes between b and c, step 17, inclusive!"
 
 # init
 set b 99
