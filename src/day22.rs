@@ -5,18 +5,39 @@ enum Direction {
     West
 }
 
+// Jahjah, it's modulo math
+#[derive(Debug, Eq, PartialEq, Clone)]
+enum CellState {
+    Clear,  // Say hello to my friend Tom C.
+    Weakened,
+    Infected,
+    Flagged
+}
+
+impl std::fmt::Display for CellState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let oot = match self {
+            CellState::Clear => " . ",
+            CellState::Weakened => " W ",
+            CellState::Infected => " # ",
+            CellState::Flagged => " F "
+        };
+        write!(f, "{}", oot)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct Grid {
-    cells: Vec<Vec<bool>>,
+    cells: Vec<Vec<CellState>>,
     offset_x: usize,
     offset_y: usize
 }
 
 impl Grid {
     fn from_string(string: &str) -> Grid {
-        let cells: Vec<Vec<bool>> = string.lines()
+        let cells: Vec<Vec<CellState>> = string.lines()
                     .map(|l| {
-                        l.chars().map(|c| { c == '#' }).collect::<Vec<bool>>()
+                        l.chars().map(|c| if c == '#' { CellState::Infected } else { CellState::Clear }).collect::<Vec<CellState>>()
                     }).collect();
         let ox = &cells[0].len() / 2;
         let oy = &cells.len() / 2;
@@ -30,7 +51,7 @@ impl Grid {
     fn grow(&mut self, dir: Direction) {
         let xd = self.cells[0].len();
         let yd = self.cells.len();
-        let grwth = vec![false; xd];
+        let grwth = vec![CellState::Clear; xd];
         match dir  {
             Direction::North => {
                 let mut north = vec!();
@@ -67,7 +88,8 @@ impl Grid {
 
 enum Turn {
     Left,
-    Right
+    Right,
+    Around
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -81,7 +103,8 @@ impl Bot {
     fn turn(&mut self, dir: Turn) {
         self.facing = match dir {
             Turn::Left => (self.facing.1, -self.facing.0),
-            Turn::Right => (-self.facing.1, self.facing.0)
+            Turn::Right => (-self.facing.1, self.facing.0),
+            Turn::Around => (-self.facing.0, -self.facing.1)
         }
     }
 
@@ -96,6 +119,22 @@ impl Bot {
             y: 0,
             facing: (0, -1)
         }
+    }
+}
+
+impl std::fmt::Display for Bot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let me = if self.facing.0 == 1 {
+            String::from(">")
+        } else if self.facing.0 == -1 {
+            String::from("<")
+        } else if self.facing.1 == 1 {
+            String::from("v")
+        } else {
+            String::from("^")
+        };
+
+        write!(f, "{}", me)
     }
 }
 
@@ -119,16 +158,34 @@ impl State {
         (bot_x, bot_y)
     }
 
-    fn burst(&mut self) -> bool {
+    fn burst(&mut self, advanced_virus: bool) -> bool {
         let (bot_x, bot_y) = self.bot_pos();
-        let is_infected = self.grid.cells[bot_y][bot_x]; // If you're so smart, why don't you "add `;` here" yourself?
-        if  is_infected {
-            self.bot.turn(Turn::Right);
-        } else {
-            self.bot.turn(Turn::Left);
+        let cell_state = &self.grid.cells[bot_y][bot_x]; // If you're so smart, why don't you "add `;` here" yourself?
+        match cell_state {
+            CellState::Clear => self.bot.turn(Turn::Left),
+            CellState::Weakened => {},
+            CellState::Infected => self.bot.turn(Turn::Right),
+            CellState::Flagged => self.bot.turn(Turn::Around)
         }
 
-        self.grid.cells[bot_y][bot_x] = !is_infected;
+        let next_state = if advanced_virus {
+            match cell_state {
+                CellState::Clear => CellState::Weakened,
+                CellState::Weakened => CellState::Infected,
+                CellState::Infected => CellState::Flagged,
+                CellState::Flagged => CellState::Clear
+            }
+        } else {
+            match cell_state {
+                CellState::Clear => CellState::Infected,
+                CellState::Weakened => CellState::Clear,
+                CellState::Infected => CellState::Clear,
+                CellState::Flagged => CellState::Clear
+            }
+        };
+
+        let infection_occurred = next_state == CellState::Infected;
+        self.grid.cells[bot_y][bot_x] = next_state;
 
         if bot_y == 0 && self.bot.facing.1 == -1 {
             self.grid.grow(Direction::North);
@@ -142,31 +199,24 @@ impl State {
 
         self.bot.step();
 
-        !is_infected
+        infection_occurred
     }
 }
 
 impl std::fmt::Display for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut lines = self.grid.cells.iter().map(|r| {
-            r.iter().map(|c| if *c { String::from(" # ") } else { String::from(" . ") }).collect::<Vec<String>>()
+            r.iter().map(|c| c.to_string()).collect::<Vec<String>>()
         }).collect::<Vec<Vec<String>>>();
 
         let (bx, by) = self.bot_pos();
-        let bot = if self.bot.facing.0 == 1 {
-            String::from(">")
-        } else if self.bot.facing.0 == -1 {
-            String::from("<")
-        } else if self.bot.facing.1 == 1 {
-            String::from("v")
-        } else {
-            String::from("^")
-        };
+        let bot = self.bot.to_string();
 
-        let bot_cell = if self.grid.cells[by][bx] {
-            format!("[{}]", bot)
-        } else {
-            format!(" {} ", bot)
+        let bot_cell = match self.grid.cells[by][bx] {
+            CellState::Clear => format!(" {} ", bot),
+            CellState::Weakened => format!("({})", bot),
+            CellState::Infected => format!("[{}]", bot),
+            CellState::Flagged => format!("{{{}}}", bot) // ya, sure
         };
 
         lines[by][bx] = bot_cell;
@@ -181,7 +231,19 @@ fn day22_part1(input: &str) -> i32 {
     let mut cnt = 0;
 
     for _i in 0..10000 {
-        cnt += state.burst() as i32;
+        cnt += state.burst(false) as i32;
+    }
+
+    cnt
+}
+
+#[aoc(day22, part2)]
+fn day22_part2(input: &str) -> i32 {
+    let mut state = State::from_string(input);
+    let mut cnt = 0;
+
+    for _i in 0..10000000 {
+        cnt += state.burst(true) as i32;
     }
 
     cnt
@@ -248,9 +310,9 @@ mod tests {
 
         assert_eq!(g, Grid{ 
             cells: vec!(
-                vec!(false, false, true),
-                vec!(true, false, false),
-                vec!(false, false, false)),
+                vec!(CellState::Clear, CellState::Clear, CellState::Infected),
+                vec!(CellState::Infected, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear)),
             offset_x: 1,
             offset_y: 1
         });
@@ -260,9 +322,9 @@ mod tests {
     fn day22_grid_grow_north() {
         let mut g = Grid {
             cells: vec!(
-                vec!(false, false, false),
-                vec!(false, true, false),
-                vec!(false, false, false)
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear)
             ),
             offset_x: 1,
             offset_y: 1
@@ -272,12 +334,12 @@ mod tests {
 
         assert_eq!(g, Grid {
             cells: vec!(
-                vec!(false, false, false),
-                vec!(false, false, false),
-                vec!(false, false, false),
-                vec!(false, false, false),
-                vec!(false, true, false),
-                vec!(false, false, false),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
             ),
             offset_x: 1,
             offset_y: 4
@@ -288,9 +350,9 @@ mod tests {
     fn day22_grid_grow_south() {
         let mut g = Grid {
             cells: vec!(
-                vec!(false, false, false),
-                vec!(false, true, false),
-                vec!(false, false, false)
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear)
             ),
             offset_x: 1,
             offset_y: 1
@@ -300,12 +362,12 @@ mod tests {
 
         assert_eq!(g, Grid {
             cells: vec!(
-                vec!(false, false, false),
-                vec!(false, true, false),
-                vec!(false, false, false),
-                vec!(false, false, false),
-                vec!(false, false, false),
-                vec!(false, false, false),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
             ),
             offset_x: 1,
             offset_y: 1
@@ -316,9 +378,9 @@ mod tests {
     fn day22_grid_grow_east() {
         let mut g = Grid {
             cells: vec!(
-                vec!(false, false, false),
-                vec!(false, true, false),
-                vec!(false, false, false)
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear)
             ),
             offset_x: 1,
             offset_y: 1
@@ -328,9 +390,9 @@ mod tests {
 
         assert_eq!(g, Grid {
             cells: vec!(
-                vec!(false, false, false, false, false, false),
-                vec!(false, true, false, false, false, false),
-                vec!(false, false, false, false, false, false)
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear)
             ),
             offset_x: 1,
             offset_y: 1
@@ -341,9 +403,9 @@ mod tests {
     fn day22_grid_grow_west() {
         let mut g = Grid {
             cells: vec!(
-                vec!(false, false, false),
-                vec!(false, true, false),
-                vec!(false, false, false)
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear)
             ),
             offset_x: 1,
             offset_y: 1
@@ -353,9 +415,9 @@ mod tests {
 
         assert_eq!(g, Grid {
             cells: vec!(
-                vec!(false, false, false, false, false, false),
-                vec!(false, false, false, false, true, false),
-                vec!(false, false, false, false, false, false)
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear),
+                vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear)
             ),
             offset_x: 4,
             offset_y: 1
@@ -370,9 +432,9 @@ mod tests {
             bot: Bot { x: 0, y: 0, facing: (0, -1)},
             grid: Grid {
                 cells: vec!(
-                    vec!(false, false, false),
-                    vec!(true, false, true),
-                    vec!(false, true, false),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Infected, CellState::Clear, CellState::Infected),
+                    vec!(CellState::Clear, CellState::Infected, CellState::Clear),
                 ),
                 offset_x: 1,
                 offset_y: 1
@@ -385,9 +447,9 @@ mod tests {
         let mut s = State {
             grid: Grid {
                 cells: vec!(
-                    vec!(false, false, false),
-                    vec!(false, false, false),
-                    vec!(false, false, false),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
                 ),
                 offset_x: 1,
                 offset_y: 1
@@ -399,14 +461,14 @@ mod tests {
             }
         };
 
-        let out = s.burst();
+        let out = s.burst(false);
 
         assert_eq!(s, State {
             grid: Grid {
                 cells: vec!(
-                    vec!(false, false, false),
-                    vec!(false, true, false),
-                    vec!(false, false, false),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
                 ),
                 offset_x: 1,
                 offset_y: 1
@@ -426,9 +488,9 @@ mod tests {
         let mut s = State {
             grid: Grid {
                 cells: vec!(
-                    vec!(false, false, false),
-                    vec!(false, true, false),
-                    vec!(false, false, false),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Infected, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
                 ),
                 offset_x: 1,
                 offset_y: 1
@@ -440,14 +502,14 @@ mod tests {
             }
         };
 
-        let out = s.burst();
+        let out = s.burst(false);
 
         assert_eq!(s, State {
             grid: Grid {
                 cells: vec!(
-                    vec!(false, false, false),
-                    vec!(false, false, false),
-                    vec!(false, false, false),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear),
                 ),
                 offset_x: 1,
                 offset_y: 1
@@ -467,9 +529,9 @@ mod tests {
         let mut s = State {
             grid: Grid {
                 cells: vec!(
-                    vec!(false, false, true),
-                    vec!(true, false, false),
-                    vec!(false, false, false)
+                    vec!(CellState::Clear, CellState::Clear, CellState::Infected),
+                    vec!(CellState::Infected, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear)
                 ),
                 offset_x: 1,
                 offset_y: 1
@@ -478,18 +540,18 @@ mod tests {
         };
 
         for _i in 0..70 {
-            s.burst();
+            s.burst(false);
         }
 
         assert_eq!(s, State {
             grid: Grid {
                 cells: vec!(
-                    vec!(false, false, false, false, false, true, true, false, false, false, false, false),
-                    vec!(false, false, false, false, true, false, false, true, false, false, false, false),
-                    vec!(false, false, false, true, false, false, false, false, true, false, false, false),
-                    vec!(false, false, true, false, true, false, false, false, true, false, false, false),
-                    vec!(false, false, true, false, true, false, false, true, false, false, false, false),
-                    vec!(false, false, false, false, false, true, true, false, false, false, false, false)
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Infected, CellState::Infected, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear, CellState::Clear)
                 ),
                 offset_x: 4,
                 offset_y: 4
@@ -501,5 +563,34 @@ mod tests {
     #[test]
     fn day22_ex1_solution() {
         assert_eq!(day22_part1(&"..#\n#..\n..."), 5587);
+    }
+
+    #[test]
+    fn day22_ex1_part_2_count() {
+        let mut s = State {
+            grid: Grid {
+                cells: vec!(
+                    vec!(CellState::Clear, CellState::Clear, CellState::Infected),
+                    vec!(CellState::Infected, CellState::Clear, CellState::Clear),
+                    vec!(CellState::Clear, CellState::Clear, CellState::Clear)
+                ),
+                offset_x: 1,
+                offset_y: 1
+            },
+            bot: Bot { x: 0, y: 0, facing: (0, -1) }
+        };
+
+
+        let mut cnt = 0;
+        for _i in 0..100{
+            cnt += s.burst(true) as usize;
+        }
+
+        assert_eq!(cnt, 26);
+    }
+
+    #[test]
+    fn day22_ex1_p2_solution() {
+        assert_eq!(day22_part2(&"..#\n#..\n..."), 2511944);
     }
 }
