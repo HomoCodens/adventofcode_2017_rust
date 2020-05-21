@@ -1,8 +1,5 @@
 use std::collections::HashMap;
 use regex::Regex;
-use std::thread;
-use std::sync::mpsc;
-use std::time::Duration;
 
 // Yes, we c&p
 
@@ -25,22 +22,24 @@ enum Instruction {
     Sub{ target: Value, value: Value },
     Mul{ target: Value, value: Value },
     Jnz{ register: Value, offset: Value },
+    Jgz{ register: Value, offset: Value },
     None
 }
 
 #[derive(Debug)]
 struct State {
     registers: HashMap<String, i64>,
-    ptr: usize
+    ptr: usize,
+    verbose: bool
 }
 
 impl State {
     fn new() -> State {
-        let mut s = State {
+        State {
             registers: HashMap::new(),
             ptr: 0,
-        };
-        s
+            verbose: false
+        }
     }
 
     fn run_instruction(&mut self, instr: Instruction) -> Result<(), ()> {
@@ -48,52 +47,75 @@ impl State {
         match instr {
             Instruction::Set{target, value} => {
                 // Eeeh...
-                //println!("Setting! id: {}, target: {:?}, value: {:?}", self.id, target, value);
+                if self.verbose {
+                    println!("Setting! target: {:?}, value: {:?}", target, value);
+                }
                 if let Value::Register(r) = target {
                     match value {
-                        Value::Constant(x) => *self.registers.entry(r).or_insert(0) = x,
+                        Value::Constant(x) => {
+                            *self.registers.entry(r).or_insert(0) = x;
+                        },
                         Value::Register(r2) => {
                             let v = *self.registers.entry(r2).or_insert(0);
+                            if self.verbose {
+                                println!("the value being {}", v);
+                            }
                             *self.registers.entry(r).or_insert(0) = v;
                         }
                     }
                 }
             },
             Instruction::Sub{target, value} => {
-                //println!("Adding! id: {}, target: {:?}, value: {:?}", self.id, target, value);
+                if self.verbose {
+                    println!("Adding! target: {:?}, value: {:?}", target, value);
+                }
                 if let Value::Register(r) = target {
                     match value {
-                        Value::Constant(x) => *self.registers.entry(r).or_insert(0) -= x,
+                        Value::Constant(x) => {
+                           *self.registers.entry(r).or_insert(0) -= x;
+                        },
                         Value::Register(r2) => {
                             let v = *self.registers.entry(r2).or_insert(0);
+                            if self.verbose {
+                                println!("the value being {}", v);
+                            }
                             *self.registers.entry(r).or_insert(0) -= v;
                         }
                     }
                 }
             },
             Instruction::Mul{target, value} => {
-                //println!("Muling! id: {}, target: {:?}, value: {:?}", self.id, target, value);
+                if self.verbose {
+                    println!("Muling! target: {:?}, value: {:?}", target, value);
+                }
                 if let Value::Register(r) = target {
                     match value {
-                        Value::Constant(x) => *self.registers.entry(r).or_insert(0) *= x,
+                        Value::Constant(x) => {
+                            *self.registers.entry(r).or_insert(0) *= x
+                        },
                         Value::Register(r2) => {
                             let v = *self.registers.entry(r2).or_insert(0);
+                            if self.verbose {
+                                println!("the value being {}", v);
+                            }
                             *self.registers.entry(r).or_insert(0) *= v;
                         }
                     }
                 }
             },
             Instruction::Jnz{register, offset} => {
-                //println!("JNZing! id: {}, register: {:?}, offest: {:?}", self.id, register, offset);
+                if self.verbose {
+                    println!("JNZing! register: {:?}, offest: {:?}", register, offset);
+                }
                 // Thanks @vash3r lol
                 // https://www.reddit.com/r/adventofcode/comments/7kj35s/2017_day_18_solutions/
                 match register {
                     Value::Register(r) => {
                         let &mut register_value = self.registers.entry(r).or_insert(0);
-                        if register_value == 0 {
-                            //println!("also, I'm not going anywheres!")
-                        }
                         if register_value != 0 {
+                            if self.verbose {
+                                println!("value is {}, JUMPING!", register_value);
+                            }
                             match offset {
                                 Value::Constant(x) => self.ptr += x as usize - 1,
                                 Value::Register(r2) => self.ptr += *self.registers.entry(r2).or_insert(0) as usize - 1
@@ -103,6 +125,36 @@ impl State {
                     Value::Constant(x) => {
                         // This code is very WET (we eternally t...uplicate?)
                         if x != 0 {
+                            match offset {
+                                Value::Constant(x) => self.ptr += x as usize - 1,
+                                Value::Register(r2) => self.ptr += *self.registers.entry(r2).or_insert(0) as usize - 1
+                            } 
+                        }
+                    }
+                }
+            },
+            Instruction::Jgz{register, offset} => {
+                if self.verbose {
+                    println!("JGZing! register: {:?}, offest: {:?}", register, offset);
+                }
+                // Thanks @vash3r lol
+                // https://www.reddit.com/r/adventofcode/comments/7kj35s/2017_day_18_solutions/
+                match register {
+                    Value::Register(r) => {
+                        let &mut register_value = self.registers.entry(r).or_insert(0);
+                        if register_value > 0 {
+                            if self.verbose {
+                                println!("value is {}, JUMPING!", register_value);
+                            }
+                            match offset {
+                                Value::Constant(x) => self.ptr += x as usize - 1,
+                                Value::Register(r2) => self.ptr += *self.registers.entry(r2).or_insert(0) as usize - 1
+                            }
+                        }
+                    },
+                    Value::Constant(x) => {
+                        // This code is very WET (we eternally t...uplicate?)
+                        if x > 0 {
                             match offset {
                                 Value::Constant(x) => self.ptr += x as usize - 1,
                                 Value::Register(r2) => self.ptr += *self.registers.entry(r2).or_insert(0) as usize - 1
@@ -132,7 +184,7 @@ fn parse_instructions(input: &str) -> Vec<Instruction> {
     let re = Regex::new(r"([a-z]{3}) ([0-9a-z]+)(?: (.+))?").expect("I can write proper regex, ya know...");
 
     input.lines().map(|l| {
-        let caps = re.captures(l).expect("matches");
+        let caps = re.captures(l.trim()).expect("matches");
         let instr = caps.get(1).unwrap().as_str();
         match instr {
             "set" => Instruction::Set{
@@ -148,6 +200,10 @@ fn parse_instructions(input: &str) -> Vec<Instruction> {
                 value: get_value(caps.get(3).unwrap().as_str())
             },
             "jnz" => Instruction::Jnz{
+                register: get_value(caps.get(2).unwrap().as_str()),
+                offset: get_value(caps.get(3).unwrap().as_str())
+            },
+            "jgz" => Instruction::Jgz{
                 register: get_value(caps.get(2).unwrap().as_str()),
                 offset: get_value(caps.get(3).unwrap().as_str())
             },
@@ -189,8 +245,70 @@ fn day23_part1(instructions: &Vec<Instruction>) -> i64 {
     n_mul
 }
 
+#[aoc(day23, part2)]
+fn day23_part23(instructions: &Vec<Instruction>) -> i64 {
+    // It's crazy, but it's MINE! (Also, it has a bug...)
+    let optimized = "   set b 17
+                        set c 68
+                        jnz a 2
+                        jnz 1 5
+                        mul b 100
+                        sub b -100000
+                        set c b
+                        sub c -17000
+                        set f 1
+                            set d 2
+                                set e d
+                                    set g d
+                                    mul g e
+                                    sub g b
+                                    jnz g 2
+                                        set f 0
+                                    jnz f 3
+                                        sub h -1
+                                        jnz 1 10
+                                    jgz g 9
+                                sub e -1
+                                set g e
+                                sub g b
+                                jnz g -12
+                            sub d -1
+                            set g d
+                            sub g b
+                            jnz g -17
+                        set g b
+                        sub g c
+                        jnz g 2
+                        jnz 1 3
+                        sub b -17
+                        jnz 1 -25";
+
+    //let instructions = &parse_instructions(&optimized);
+    let mut s = State::new();
+    //s.verbose = true;
+    *s.registers.entry(String::from("a")).or_insert(0) = 1;
+
+    loop {
+        if s.ptr >= instructions.len() {
+            println!("program 0 exiting due to pointer out of range");
+            break;
+        }
+
+        let i = instructions[s.ptr].clone();
+        match s.run_instruction(i) {
+            Ok(_) => {},
+            Err(_) => break
+        }
+
+        //println!("{:?}", s.registers);
+    }
+
+    *s.registers.entry(String::from("h")).or_insert(0)
+}
+
 /*
 # something something prime numbers I'm sure...
+# "count the non-primes between b and c, inclusive!"
 
 # init
 set b 99
@@ -209,19 +327,17 @@ set c b
 sub c -17000
 
 @main
-# init part 1
+# main loop i = b:17:c
 set f 1
 set d 2
 set e 2
 
-# outer loop 2:b
-# loop 2:b
-# g = d*e-b
+# outer loop d = 2:b
+# loop e = 2:b
+# if d*e == b, set f to 0
 set g d
 mul g e
 sub g b
-
-# if d*e == b, set f to 0
 jnz g 2
 set f 0
 
